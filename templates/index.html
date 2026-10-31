@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SKYCAST — Intelligent Weather Monitoring & AWS Multi-Instance Cloud Platform</title>
+  <meta name="description" content="Production-grade weather monitoring platform powered by Open-Meteo API and architected for AWS Multi-EC2 with Application Load Balancer and Auto Scaling.">
+  <meta name="theme-color" content="#070B14">
+
+  <!-- Google Fonts: Inter & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body data-theme="dark">
+  <div class="app-layout">
+    
+    <!-- ==============================================
+         A. NAVIGATION SIDEBAR
+         ============================================== -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-logo-wrap">
+          <img src="{{ url_for('static', filename='images/logo.svg') }}" alt="SKYCAST Logo" class="brand-logo">
+          <span class="brand-glow"></span>
+        </div>
+        <div class="brand-text">
+          <h1 class="brand-title">SKYCAST</h1>
+          <span class="brand-tagline">Weather Intelligence</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <ul class="nav-list">
+          <li class="nav-item">
+            <button class="nav-link active" data-tab="tab-overview" id="nav-btn-overview">
+              <i data-lucide="layout-dashboard"></i>
+              <span>Overview</span>
+            </button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link" data-tab="tab-forecast" id="nav-btn-forecast">
+              <i data-lucide="calendar-days"></i>
+              <span>Weather Forecast</span>
+            </button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link" data-tab="tab-analytics" id="nav-btn-analytics">
+              <i data-lucide="line-chart"></i>
+              <span>Analytics</span>
+            </button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link" data-tab="tab-aws" id="nav-btn-aws">
+              <i data-lucide="cloud-cog"></i>
+              <span>AWS Infrastructure</span>
+              <span class="nav-badge-pill" id="sidebar-node-pill">ALB Active</span>
+            </button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link" data-tab="tab-history" id="nav-btn-history">
+              <i data-lucide="history"></i>
+              <span>Search History</span>
+            </button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link" data-tab="tab-about" id="nav-btn-about">
+              <i data-lucide="info"></i>
+              <span>About Project</span>
+            </button>
+          </li>
+        </ul>
+      </nav>
+
+      <!-- Sidebar Footer: Host Status Badge -->
+      <div class="sidebar-footer">
+        <div class="instance-status-card" id="sidebar-instance-card">
+          <div class="status-indicator-row">
+            <span class="status-pulse-dot" id="instance-dot"></span>
+            <span class="status-mode-label" id="instance-mode-label">
+              {{ 'AWS EC2 ACTIVE' if instance.is_aws else 'LOCAL DEV MODE' }}
+            </span>
+          </div>
+          <div class="instance-details">
+            <div class="inst-line">
+              <span class="inst-label">Node:</span>
+              <span class="inst-val" id="inst-val-id">{{ instance.instance_id }}</span>
+            </div>
+            <div class="inst-line">
+              <span class="inst-label">Zone:</span>
+              <span class="inst-val" id="inst-val-zone">{{ instance.availability_zone }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-wrapper">
+      
+      <!-- ==============================================
+           B. TOP HEADER
+           ============================================== -->
+      <header class="top-header">
+        <div class="header-left">
+          <button class="mobile-toggle-btn" id="mobile-toggle" aria-label="Toggle navigation">
+            <i data-lucide="menu"></i>
+          </button>
+          <div class="greeting-box">
+            <h2 class="greeting-title" id="greeting-text">Good Afternoon, Explorer</h2>
+            <div class="date-time-bar">
+              <span id="live-date">Loading date...</span>
+              <span class="separator">•</span>
+              <span id="live-clock" class="mono-time">00:00:00 AM</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="header-center">
+          <form class="search-form" id="search-form" onsubmit="return false;">
+            <div class="search-input-wrap">
+              <i data-lucide="search" class="search-icon"></i>
+              <input 
+                type="text" 
+                id="city-search-input" 
+                placeholder="Search any global city (e.g. Bengaluru, Tokyo, Paris)..." 
+                autocomplete="off"
+                value="{{ default_city }}"
+              >
+              <button type="submit" class="search-submit-btn" id="search-submit-btn" title="Search weather">
+                <span>Search</span>
+                <i data-lucide="arrow-right"></i>
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div class="header-right">
+          <!-- Refresh Button -->
+          <button class="header-action-btn" id="refresh-btn" title="Refresh weather data">
+            <i data-lucide="rotate-cw" id="refresh-icon"></i>
+            <span class="btn-text">Refresh</span>
+          </button>
+
+          <!-- Unit Switcher (°C / °F) -->
+          <div class="unit-toggle" id="unit-toggle" title="Toggle Temperature Unit">
+            <button class="unit-btn active" id="unit-c" data-unit="C">°C</button>
+            <button class="unit-btn" id="unit-f" data-unit="F">°F</button>
+          </div>
+
+          <!-- Cloud Telemetry Status Pill -->
+          <div class="cloud-status-pill" id="cloud-status-pill" title="Target Group Health">
+            <span class="cloud-indicator-dot"></span>
+            <span class="cloud-status-text" id="header-cloud-text">
+              {{ 'ALB: ' + instance.availability_zone if instance.is_aws else 'ALB Target: Localhost' }}
+            </span>
+          </div>
+
+          <!-- User Profile Avatar -->
+          <div class="user-avatar-wrap" title="Session: Administrator">
+            <div class="avatar-circle">
+              <span>SC</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Quick City Selection Bar -->
+      <section class="quick-cities-bar">
+        <span class="quick-cities-label">
+          <i data-lucide="map-pin"></i> Popular Cities:
+        </span>
+        <div class="quick-city-pills" id="quick-city-pills">
+          <button class="city-pill active" data-city="Bengaluru">Bengaluru</button>
+          <button class="city-pill" data-city="Mumbai">Mumbai</button>
+          <button class="city-pill" data-city="Delhi">Delhi</button>
+          <button class="city-pill" data-city="Chennai">Chennai</button>
+          <button class="city-pill" data-city="Hyderabad">Hyderabad</button>
+          <button class="city-pill" data-city="London">London</button>
+          <button class="city-pill" data-city="Tokyo">Tokyo</button>
+          <button class="city-pill" data-city="New York">New York</button>
+        </div>
+      </section>
+
+      <!-- System Notification Banner / Error Bar -->
+      <div class="notification-banner hidden" id="notification-banner">
+        <i data-lucide="alert-triangle" class="notif-icon"></i>
+        <span class="notif-text" id="notif-text">Notification message</span>
+        <button class="notif-close" id="notif-close" aria-label="Close notification">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <!-- ==============================================
+           TAB PANELS CONTAINER
+           ============================================== -->
+      <div class="tab-panels">
+
+        <!-- ==========================================
+             TAB 1: OVERVIEW (HERO, 8 METRICS, INSIGHTS, SUN ARC)
+             ========================================== -->
+        <section class="tab-panel active" id="tab-overview">
+          
+          <!-- Loading Overlay -->
+          <div class="skeleton-loader hidden" id="overview-skeleton">
+            <div class="skeleton-hero"></div>
+            <div class="skeleton-grid">
+              <div class="skeleton-card" v-for="i in 8"></div>
+            </div>
+          </div>
+
+          <div class="overview-content" id="overview-content">
+            
+            <!-- C. Main Weather Hero Card -->
+            <div class="hero-weather-card" id="hero-card">
+              <div class="hero-glow-layer"></div>
+              
+              <div class="hero-header-row">
+                <div class="hero-location">
+                  <div class="city-badge">
+                    <i data-lucide="map-pin" class="pin-icon"></i>
+                    <h2 class="city-name" id="hero-city-name">Bengaluru</h2>
+                    <span class="country-tag" id="hero-country">India</span>
+                  </div>
+                  <div class="coordinates-info">
+                    <span id="hero-coords">Lat: 12.97° N, Lon: 77.59° E</span>
+                    <span class="separator">•</span>
+                    <span class="last-synced-tag">Live via Open-Meteo</span>
+                  </div>
+                </div>
+
+                <div class="hero-live-badge">
+                  <span class="pulse-ring"></span>
+                  <span class="badge-text">LIVE CONDITIONS</span>
+                </div>
+              </div>
+
+              <div class="hero-body-row">
+                <div class="hero-temperature-section">
+                  <div class="temp-display-wrap">
+                    <span class="current-temp" id="hero-current-temp">24.5</span>
+                    <span class="temp-unit-symbol" id="hero-temp-unit">°C</span>
+                  </div>
+                  <div class="condition-badge-wrap">
+                    <span class="condition-title" id="hero-condition-title">Partly Cloudy</span>
+                    <p class="condition-desc" id="hero-condition-desc">Scattered cloud cover with pleasant daytime breeze.</p>
+                  </div>
+                </div>
+
+                <!-- Animated Weather Visual Illustration -->
+                <div class="hero-illustration-section">
+                  <div class="weather-art-box" id="weather-art-box">
+                    <!-- Dynamic dynamic weather graphic injected via JS -->
+                    <div class="art-sun-glow"></div>
+                    <div class="art-cloud cloud-1"></div>
+                    <div class="art-cloud cloud-2"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Hero Footer Pills -->
+              <div class="hero-footer-pills">
+                <div class="hero-pill">
+                  <i data-lucide="thermometer" class="pill-icon text-cyan"></i>
+                  <div class="pill-data">
+                    <span class="pill-label">Feels Like</span>
+                    <span class="pill-val" id="hero-feels-like">25.1°C</span>
+                  </div>
+                </div>
+
+                <div class="hero-pill">
+                  <i data-lucide="arrow-up-right" class="pill-icon text-violet"></i>
+                  <div class="pill-data">
+                    <span class="pill-label">High / Low</span>
+                    <span class="pill-val" id="hero-high-low">28.0° / 19.2°</span>
+                  </div>
+                </div>
+
+                <div class="hero-pill">
+                  <i data-lucide="wind" class="pill-icon text-cyan"></i>
+                  <div class="pill-data">
+                    <span class="pill-label">Wind Velocity</span>
+                    <span class="pill-val" id="hero-wind-speed">12.4 km/h</span>
+                  </div>
+                </div>
+
+                <div class="hero-pill">
+                  <i data-lucide="droplets" class="pill-icon text-blue"></i>
+                  <div class="pill-data">
+                    <span class="pill-label">Humidity</span>
+                    <span class="pill-val" id="hero-humidity">64%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- D. 8 Weather Metrics Grid -->
+            <div class="section-title-bar">
+              <div class="title-with-icon">
+                <i data-lucide="gauge"></i>
+                <h3>Core Meteorological Telemetry</h3>
+              </div>
+              <span class="section-subtext">8-Point Atmospheric Sensor Array</span>
+            </div>
+
+            <div class="metrics-grid">
+              
+              <!-- Metric 1: Humidity -->
+              <div class="metric-card">
+                <div class="metric-header">
+                  <span class="metric-title">Relative Humidity</span>
+                  <div class="metric-icon-wrap bg-cyan-glass">
+                    <i data-lucide="droplets" class="text-cyan"></i>
+                  </div>
+                </div>
+                <div class="metric-main-val">
+                  <span class="val-number" id="metric-humidity">64</span>
+                  <span class="val-unit">%</span>
+                </div>
+                <div class="metric-progress-track">
+                  <div class="metric-progress-fill bg-cyan-grad" id="humidity-fill" style="width: 64%;"></div>
+                </div>
+                <div class="metric-footer-note" id="humidity-note">Optimal comfort zone</div>
+              </div>
+
+              <!-- Metric 2: Wind Speed -->
+              <div class="metric-card">
+                <div class="metric-header">
+                  <span class="metric-title">Wind Velocity</span>
+                  <div class="metric-icon-wrap bg-violet-glass">
+                    <i data-lucide="wind" class="text-violet"></i>
+                  </div>
+                </div>
+                <div class="metric-main-val">
+                  <span class="val-number" id="metric-wind-speed">12.4</span>
+                  <span class="val-unit">km/h</span>
+                </div>
+                <div class="metric-progress-track">
+                  <div class="metric-progress-fill bg-violet-grad" id="wind-fill" style="width: 25%;"></div>
+                </div>
+                <div class="metric-footer-note" id="wind-note">Beaufort: Gentle Breeze</div>
+              </div>
+
+              <!-- Metric 3: Wind Direction -->
+              <div class="metric-card">
+                <div class="metric-header">
+                  <span class="metric-title">Wind Direction</span>
+                  <div class="metric-icon-wrap bg-indigo-glass">
+                    <i data-lucide="compass" class="text-indigo"></i>
+                  </div>
+                </div>
+                <div class="metric-compass-row">
+                  <div class="compass-circle">
+                    <div class="compass-needle" id="compass-needle">
+                      <span class="needle-north"></span>
+                    </div>
+                  </div>
+                  <div class="compass-data">
+                    <span class="val-number" id="metric-wind-deg">140°</span>
+                    <span class="cardinal-dir" id="metric-wind-cardinal">SE</span>
+                  </div>
+                </div>
+                <div class="metric-footer-note" id="wind-dir-note">Steady East-Southeasterly flow</div>
+              </div>
+
+              <!-- Metric 4: Atmospheric Pressure -->
+              <div class="metric-card">
+                <div class="metric-header">
+                  <span class="metric-title">Barometric Pressure</span>
+                  <div class="metric-icon-wrap bg-cyan-glass">
+                    <i data-lucide="gauge" class="text-cyan"></i>
+                  </div>
+                </div>
+                <div class="metric-main-val">
+                  <span class="val-number" id="metric-pressure">1014.2</span>
+                  <span class="val-unit">hPa</span>
+                </div>
+                <div class="metric-progress-track">
+                  <div class="metric-progress-fill bg-blue-grad" id="pressure-fill" style="width: 58%;"></div>
+                </div>
+                <div class="metric-footer-note" id="pressure-note">Normal Sea-Level Standard</div>
+              </div>
+
+              <!-- Metric 5: Visibility -->
+              <div class="metric-card">
+                <div class="metric-header">
+                  <span class="metric-title">Visibility</span>
+                  <div class="metric-icon-wrap bg-violet-glass">
+                    <i data-lucide="eye" class="text-violet"></i>
+                  </div>
+                </div>
+                <div class="metric-main-val">
+                  <span class="val-number" id="metric-visibility">10.0</span>
+                  <span class="val-unit">km</span>
+                </div>
+                <div class="metric-progress-track">
+                  <div class="metric-progress-fill bg-violet-grad" id="visibility-fill" style="width: 100%;"></div>
+                </div>
+                <div class="metric-footer-note" id="visibility-note">Clear Line-of-Sight</div>
+              </div>
+
+              <!-- Metric 6: UV Index -->
+              <div class="metric-card">
+                <div class="metric-header">
+                  <span class="metric-title">UV Solar Index</span>
+                  <div class="metric-icon-wrap bg-amber-glass">
+                    <i data-lucide="sun" class="text-amber"></i>
+                  </div>
+                </div>
+                <div class="metric-main-val">
+                  <span class="val-number" id="metric-uv">5.4</span>
+                  <span class="val-unit">/ 11+</span>
+                </div>
+                <div class="metric-progress-track">
+                  <div class="metric-progress-fill bg-amber-grad" id="uv-fill" style="width: 50%;"></div>
+                </div>
+                <div class="metric-footer-note" id="uv-note">Moderate - Eye protection advised</div>
+              </div>
+
+              <!-- Metric 7: Cloud Coverage -->
+              <div class="metric-card">
+                <div class="metric-header">
+                  <span class="metric-title">Cloud Coverage</span>
+                  <div class="metric-icon-wrap bg-cyan-glass">
+                    <i data-lucide="cloud" class="text-cyan"></i>
+                  </div>
+                </div>
+                <div class="metric-main-val">
+                  <span class="val-number" id="metric-clouds">42</span>
+                  <span class="val-unit">%</span>
+                </div>
+                <div class="metric-progress-track">
+                  <div class="metric-progress-fill bg-cyan-grad" id="clouds-fill" style="width: 42%;"></div>
+                </div>
+                <div class="metric-footer-note" id="clouds-note">Scattered cumulus formations</div>
+              </div>
+
+              <!-- Metric 8: Dew Point -->
+              <div class="metric-card">
+                <div class="metric-header">
+                  <span class="metric-title">Dew Point</span>
+                  <div class="metric-icon-wrap bg-indigo-glass">
+                    <i data-lucide="thermometer-snowflake" class="text-indigo"></i>
+                  </div>
+                </div>
+                <div class="metric-main-val">
+                  <span class="val-number" id="metric-dew-point">17.2</span>
+                  <span class="val-unit" id="dew-unit">°C</span>
+                </div>
+                <div class="metric-progress-track">
+                  <div class="metric-progress-fill bg-indigo-grad" id="dew-fill" style="width: 45%;"></div>
+                </div>
+                <div class="metric-footer-note" id="dew-note">Crisp and comfortable humidity</div>
+              </div>
+
+            </div>
+
+            <!-- Split Row: J. Weather Insights & G. Sunrise/Sunset Arc -->
+            <div class="split-insights-row">
+              
+              <!-- J. Weather Insights Card -->
+              <div class="insights-container">
+                <div class="card-header-clean">
+                  <div class="title-with-icon">
+                    <i data-lucide="sparkles" class="text-cyan"></i>
+                    <h4>Smart Weather Intelligence</h4>
+                  </div>
+                  <span class="clean-badge">Automated Suggestions</span>
+                </div>
+                <p class="insights-disclaimer">
+                  Rule-based automated advisory synthesized from real-time Open-Meteo forecast parameters.
+                </p>
+                <div class="insights-list" id="insights-list">
+                  <!-- Dynamic Insights Injected Here -->
+                  <div class="insight-item">
+                    <div class="insight-icon-box bg-cyan-glass">
+                      <i data-lucide="umbrella" class="text-cyan"></i>
+                    </div>
+                    <div class="insight-body">
+                      <h5>Precipitation Outlook</h5>
+                      <p>Calculating weather parameters...</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- G. Sunrise & Sunset Solar Trajectory Arc Card -->
+              <div class="sun-arc-container">
+                <div class="card-header-clean">
+                  <div class="title-with-icon">
+                    <i data-lucide="sun-medium" class="text-amber"></i>
+                    <h4>Solar Trajectory & Twilight</h4>
+                  </div>
+                  <span class="clean-badge" id="sun-daylight-duration">Daylight: 11h 48m</span>
+                </div>
+
+                <div class="sun-visualizer-box">
+                  <svg class="sun-arc-svg" viewBox="0 0 300 130">
+                    <!-- Dotted Path -->
+                    <path d="M 20 120 A 130 110 0 0 1 280 120" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="2" stroke-dasharray="4 4" />
+                    <!-- Solid Glow Arc -->
+                    <path id="sun-progress-arc" d="M 20 120 A 130 110 0 0 1 150 10" fill="none" stroke="url(#sunGrad)" stroke-width="3" />
+                    <!-- Horizon Line -->
+                    <line x1="10" y1="120" x2="290" y2="120" stroke="rgba(255,255,255,0.2)" stroke-width="1" />
+                    <!-- Sun Marker Circle -->
+                    <circle id="sun-marker-circle" cx="150" cy="10" r="7" fill="#FACC15" filter="drop-shadow(0 0 8px #F59E0B)" />
+                    <defs>
+                      <linearGradient id="sunGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stop-color="#F59E0B" />
+                        <stop offset="50%" stop-color="#FACC15" />
+                        <stop offset="100%" stop-color="#38BDF8" />
+                      </linearGradient>
+                    </defs>
+                  </svg>
+                </div>
+
+                <div class="sun-times-row">
+                  <div class="sun-time-block">
+                    <i data-lucide="sunrise" class="text-amber"></i>
+                    <div>
+                      <span class="sun-label">Sunrise</span>
+                      <span class="sun-hour" id="sun-rise-time">06:08 AM</span>
+                    </div>
+                  </div>
+                  <div class="sun-time-block text-right">
+                    <i data-lucide="sunset" class="text-violet"></i>
+                    <div>
+                      <span class="sun-label">Sunset</span>
+                      <span class="sun-hour" id="sun-set-time">06:14 PM</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Mini Hourly Trend Preview -->
+            <div class="hourly-preview-card">
+              <div class="card-header-clean">
+                <div class="title-with-icon">
+                  <i data-lucide="trending-up" class="text-cyan"></i>
+                  <h4>24-Hour Temperature Trajectory</h4>
+                </div>
+                <button class="text-link-btn" id="view-full-forecast-btn">
+                  <span>View 7-Day Matrix</span>
+                  <i data-lucide="chevron-right"></i>
+                </button>
+              </div>
+              <div class="chart-canvas-container" style="height: 190px;">
+                <canvas id="overviewMiniChart"></canvas>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- ==========================================
+             TAB 2: WEATHER FORECAST (24H HOURLY + 7-DAY)
+             ========================================== -->
+        <section class="tab-panel" id="tab-forecast">
+          
+          <div class="section-title-bar">
+            <div class="title-with-icon">
+              <i data-lucide="clock"></i>
+              <h3>24-Hour Hourly Atmospheric Sequence</h3>
+            </div>
+            <span class="section-subtext">Continuous Synoptic Projections</span>
+          </div>
+
+          <!-- E. Hourly Horizontal Slider -->
+          <div class="hourly-slider-wrap">
+            <button class="slider-arrow left" id="hourly-slide-left" aria-label="Slide left">
+              <i data-lucide="chevron-left"></i>
+            </button>
+            <div class="hourly-cards-container" id="hourly-cards-container">
+              <!-- Dynamically populated via JS -->
+            </div>
+            <button class="slider-arrow right" id="hourly-slide-right" aria-label="Slide right">
+              <i data-lucide="chevron-right"></i>
+            </button>
+          </div>
+
+          <!-- Hourly Interactive Chart -->
+          <div class="analytics-card" style="margin-top: 1.5rem;">
+            <div class="card-header-clean">
+              <div class="title-with-icon">
+                <i data-lucide="line-chart" class="text-cyan"></i>
+                <h4>Hourly Temperature Curve & Precipitation Probability</h4>
+              </div>
+              <span class="clean-badge">Next 24 Hours</span>
+            </div>
+            <div class="chart-canvas-container" style="height: 240px;">
+              <canvas id="forecastHourlyChart"></canvas>
+            </div>
+          </div>
+
+          <!-- F. 7-Day Extended Forecast -->
+          <div class="section-title-bar" style="margin-top: 2.5rem;">
+            <div class="title-with-icon">
+              <i data-lucide="calendar"></i>
+              <h3>7-Day Extended Synoptic Outlook</h3>
+            </div>
+            <span class="section-subtext">Daily Max/Min Thermal Spans & Precipitation Odds</span>
+          </div>
+
+          <div class="daily-cards-grid" id="daily-cards-container">
+            <!-- Dynamically populated via JS -->
+          </div>
+
+        </section>
+
+        <!-- ==========================================
+             TAB 3: ANALYTICS (4 INTERACTIVE CHARTS)
+             ========================================== -->
+        <section class="tab-panel" id="tab-analytics">
+          
+          <div class="section-title-bar">
+            <div class="title-with-icon">
+              <i data-lucide="bar-chart-3"></i>
+              <h3>Comprehensive Meteorological Analytics</h3>
+            </div>
+            <span class="section-subtext">Multi-Variable Telemetry Corroboration</span>
+          </div>
+
+          <div class="analytics-grid-2x2">
+            
+            <!-- Chart 1: Temperature -->
+            <div class="analytics-card">
+              <div class="card-header-clean">
+                <div class="title-with-icon">
+                  <i data-lucide="thermometer" class="text-cyan"></i>
+                  <h4>Thermal Fluctuation Profile</h4>
+                </div>
+                <span class="clean-badge">Temperature (°C)</span>
+              </div>
+              <div class="chart-canvas-container" style="height: 250px;">
+                <canvas id="analyticsTempChart"></canvas>
+              </div>
+            </div>
+
+            <!-- Chart 2: Humidity -->
+            <div class="analytics-card">
+              <div class="card-header-clean">
+                <div class="title-with-icon">
+                  <i data-lucide="droplets" class="text-blue"></i>
+                  <h4>Relative Humidity Profile</h4>
+                </div>
+                <span class="clean-badge">Atmospheric RH (%)</span>
+              </div>
+              <div class="chart-canvas-container" style="height: 250px;">
+                <canvas id="analyticsHumidityChart"></canvas>
+              </div>
+            </div>
+
+            <!-- Chart 3: Wind Velocity -->
+            <div class="analytics-card">
+              <div class="card-header-clean">
+                <div class="title-with-icon">
+                  <i data-lucide="wind" class="text-violet"></i>
+                  <h4>Wind Velocity Vector</h4>
+                </div>
+                <span class="clean-badge">Speed (km/h)</span>
+              </div>
+              <div class="chart-canvas-container" style="height: 250px;">
+                <canvas id="analyticsWindChart"></canvas>
+              </div>
+            </div>
+
+            <!-- Chart 4: Precipitation Probability -->
+            <div class="analytics-card">
+              <div class="card-header-clean">
+                <div class="title-with-icon">
+                  <i data-lucide="cloud-rain" class="text-cyan"></i>
+                  <h4>Precipitation Probability Density</h4>
+                </div>
+                <span class="clean-badge">Probability (%)</span>
+              </div>
+              <div class="chart-canvas-container" style="height: 250px;">
+                <canvas id="analyticsPrecipChart"></canvas>
+              </div>
+            </div>
+
+          </div>
+
+        </section>
+
+        <!-- ==========================================
+             TAB 4: AWS MULTI-EC2 CLOUD INFRASTRUCTURE
+             ========================================== -->
+        <section class="tab-panel" id="tab-aws">
+          
+          <div class="section-title-bar">
+            <div class="title-with-icon">
+              <i data-lucide="cloud-lightning"></i>
+              <h3>AWS Multi-EC2 High-Availability Cluster</h3>
+            </div>
+            <span class="section-subtext">Enterprise Dual-Node Elastic Architecture</span>
+          </div>
+
+          <!-- Architecture Visual Topology Card -->
+          <div class="aws-topology-card">
+            <div class="topology-header">
+              <div class="topology-title-box">
+                <span class="topology-badge">SYSTEM ARCHITECTURE</span>
+                <h4>Application Load Balancer & Dual-Instance Topography</h4>
+              </div>
+              <button class="btn-secondary" id="test-alb-routing-btn">
+                <i data-lucide="shuffle"></i>
+                <span>Simulate ALB Request Routing</span>
+              </button>
+            </div>
+
+            <!-- Diagrammatic Interactive Flow -->
+            <div class="topology-diagram">
+              
+              <!-- Tier 1: Client/User -->
+              <div class="topo-node user-node">
+                <div class="topo-icon bg-cyan-glass">
+                  <i data-lucide="globe"></i>
+                </div>
+                <span class="node-title">End Users</span>
+                <span class="node-sub">HTTPS / Port 443</span>
+              </div>
+
+              <div class="topo-connector">
+                <span class="connector-line"></span>
+                <i data-lucide="chevron-right" class="connector-arrow"></i>
+              </div>
+
+              <!-- Tier 2: ALB -->
+              <div class="topo-node alb-node">
+                <div class="topo-icon bg-indigo-glass">
+                  <i data-lucide="network"></i>
+                </div>
+                <span class="node-title">AWS ALB</span>
+                <span class="node-sub">Round-Robin Router</span>
+                <span class="node-status-badge status-green">Healthy</span>
+              </div>
+
+              <div class="topo-connector">
+                <span class="connector-line split-line"></span>
+                <i data-lucide="git-fork" class="connector-arrow"></i>
+              </div>
+
+              <!-- Tier 3: EC2 Instances (Dual-Node) -->
+              <div class="topo-cluster-box">
+                
+                <!-- Node 1 -->
+                <div class="topo-node ec2-node active-target" id="topo-node-1">
+                  <div class="node-header-row">
+                    <div class="topo-icon bg-violet-glass">
+                      <i data-lucide="server"></i>
+                    </div>
+                    <span class="node-pulse active"></span>
+                  </div>
+                  <span class="node-title">EC2 Instance 1</span>
+                  <span class="node-sub">ap-south-1a • t3.micro</span>
+                  <div class="node-software-tags">
+                    <span>Nginx</span>
+                    <span>Gunicorn</span>
+                    <span>Flask</span>
+                  </div>
+                  <span class="node-status-badge status-green">InService</span>
+                </div>
+
+                <!-- Node 2 -->
+                <div class="topo-node ec2-node" id="topo-node-2">
+                  <div class="node-header-row">
+                    <div class="topo-icon bg-violet-glass">
+                      <i data-lucide="server"></i>
+                    </div>
+                    <span class="node-pulse standby"></span>
+                  </div>
+                  <span class="node-title">EC2 Instance 2</span>
+                  <span class="node-sub">ap-south-1b • t3.micro</span>
+                  <div class="node-software-tags">
+                    <span>Nginx</span>
+                    <span>Gunicorn</span>
+                    <span>Flask</span>
+                  </div>
+                  <span class="node-status-badge status-green">InService</span>
+                </div>
+
+              </div>
+
+              <div class="topo-connector">
+                <span class="connector-line"></span>
+                <i data-lucide="chevron-right" class="connector-arrow"></i>
+              </div>
+
+              <!-- Tier 4: Supporting Cloud Services -->
+              <div class="topo-services-column">
+                <div class="service-chip">
+                  <i data-lucide="database" class="text-cyan"></i>
+                  <span>Amazon DynamoDB</span>
+                </div>
+                <div class="service-chip">
+                  <i data-lucide="activity" class="text-violet"></i>
+                  <span>Amazon CloudWatch</span>
+                </div>
+                <div class="service-chip">
+                  <i data-lucide="archive" class="text-amber"></i>
+                  <span>Amazon S3 Bucket</span>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Simulation Feedback Output -->
+            <div class="alb-sim-log hidden" id="alb-sim-log">
+              <i data-lucide="terminal" class="terminal-icon"></i>
+              <span id="alb-sim-text">Routing HTTP GET /api/weather across ALB Target Group...</span>
+            </div>
+          </div>
+
+          <!-- AWS IMDSv2 Live Inspector -->
+          <div class="aws-metadata-card">
+            <div class="card-header-clean">
+              <div class="title-with-icon">
+                <i data-lucide="cpu" class="text-cyan"></i>
+                <h4>EC2 IMDSv2 Metadata Inspector (Live Verification)</h4>
+              </div>
+              <span class="clean-badge" id="aws-env-badge">
+                {{ instance.environment }}
+              </span>
+            </div>
+            <p class="aws-imdsv2-explain">
+              Skycast securely queries the local EC2 Instance Metadata Service Version 2 via session token (<code>PUT /latest/api/token</code>) 
+              with zero hardcoded credentials. On local development workstations, it safely reports verified local host specs.
+            </p>
+
+            <div class="metadata-table-wrap">
+              <table class="metadata-table">
+                <thead>
+                  <tr>
+                    <th>Metadata Parameter</th>
+                    <th>Observed Telemetry Value</th>
+                    <th>Detection Protocol</th>
+                  </tr>
+                </thead>
+                <tbody id="metadata-tbody">
+                  <tr>
+                    <td><strong>Instance Identifier</strong></td>
+                    <td class="mono-text" id="meta-instance-id">{{ instance.instance_id }}</td>
+                    <td><span class="badge-tag">IMDSv2 /meta-data/instance-id</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>Placement Zone & Region</strong></td>
+                    <td class="mono-text" id="meta-zone">{{ instance.availability_zone }} ({{ instance.region }})</td>
+                    <td><span class="badge-tag">IMDSv2 /placement/availability-zone</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>Hardware Instance Type</strong></td>
+                    <td class="mono-text" id="meta-type">{{ instance.instance_type }}</td>
+                    <td><span class="badge-tag">IMDSv2 /meta-data/instance-type</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>Private Subnet IPv4</strong></td>
+                    <td class="mono-text" id="meta-local-ip">{{ instance.local_ip }}</td>
+                    <td><span class="badge-tag">IMDSv2 /meta-data/local-ipv4</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>Public IPv4 Gateway</strong></td>
+                    <td class="mono-text" id="meta-public-ip">{{ instance.public_ip }}</td>
+                    <td><span class="badge-tag">IMDSv2 /meta-data/public-ipv4</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>Host Machine & OS Kernel</strong></td>
+                    <td class="mono-text" id="meta-os">{{ instance.hostname }} ({{ instance.os }})</td>
+                    <td><span class="badge-tag">Socket & Platform POSIX/NT</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- CloudWatch Telemetry & Health Checks -->
+          <div class="cloudwatch-grid">
+            <div class="cw-metric-card">
+              <div class="cw-header">
+                <span class="cw-title">ALB Target Response Latency</span>
+                <i data-lucide="timer" class="text-cyan"></i>
+              </div>
+              <div class="cw-val-row">
+                <span class="cw-number" id="cw-latency">18.4</span>
+                <span class="cw-unit">ms</span>
+              </div>
+              <span class="cw-subtext">Within AWS p99 SLA (&lt; 50ms)</span>
+            </div>
+
+            <div class="cw-metric-card">
+              <div class="cw-header">
+                <span class="cw-title">Cluster CPU Utilization</span>
+                <i data-lucide="cpu" class="text-violet"></i>
+              </div>
+              <div class="cw-val-row">
+                <span class="cw-number" id="cw-cpu">8.2</span>
+                <span class="cw-unit">%</span>
+              </div>
+              <span class="cw-subtext">Auto Scaling Threshold: 70%</span>
+            </div>
+
+            <div class="cw-metric-card">
+              <div class="cw-header">
+                <span class="cw-title">Target Group Health Ratio</span>
+                <i data-lucide="shield-check" class="text-green"></i>
+              </div>
+              <div class="cw-val-row">
+                <span class="cw-number" id="cw-health">2 / 2</span>
+                <span class="cw-unit">Healthy</span>
+              </div>
+              <span class="cw-subtext">HTTP 200 on /api/health</span>
+            </div>
+          </div>
+
+          <!-- AWS Cost Notice Card -->
+          <div class="aws-cost-notice-card">
+            <div class="notice-icon-wrap">
+              <i data-lucide="wallet"></i>
+            </div>
+            <div class="notice-content">
+              <h5>AWS Academic Cost Advisory & Resource Cleanup</h5>
+              <p>
+                AWS services (Application Load Balancer hourly fees, Public IPv4 address allocation charges, 
+                and NAT Gateways) can incur charges outside or after Free Tier eligibility. Always execute 
+                the cleanup commands documented in <code>aws/deployment-guide.md</code> after your viva demonstration.
+              </p>
+            </div>
+          </div>
+
+        </section>
+
+        <!-- ==========================================
+             TAB 5: SEARCH HISTORY
+             ========================================== -->
+        <section class="tab-panel" id="tab-history">
+          
+          <div class="section-title-bar">
+            <div class="title-with-icon">
+              <i data-lucide="history"></i>
+              <h3>Search Telemetry & Audit History</h3>
+            </div>
+            <div class="header-actions">
+              <span class="clean-badge" id="history-storage-badge">Local Storage</span>
+              <button class="btn-secondary" id="clear-history-btn">
+                <i data-lucide="trash-2"></i>
+                <span>Clear Audit Log</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="history-table-card">
+            <table class="history-table">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>City Location</th>
+                  <th>Country</th>
+                  <th>Recorded Temp</th>
+                  <th>Weather Condition</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="history-tbody">
+                <tr>
+                  <td colspan="6" class="text-center py-4">No recent queries recorded yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+        </section>
+
+        <!-- ==========================================
+             TAB 6: ABOUT PROJECT & VIVA BRIEFING
+             ========================================== -->
+        <section class="tab-panel" id="tab-about">
+          
+          <div class="about-hero-card">
+            <div class="about-badge-tag">COLLEGE CAPSTONE PROJECT</div>
+            <h2 class="about-title">SKYCAST — Intelligent Weather Monitoring & AWS Multi-Instance Cloud Platform</h2>
+            <p class="about-subtitle">
+              An enterprise-grade, high-availability meteorological analytics platform engineered to demonstrate 
+              cloud resilience, load distribution, and real-time API aggregation.
+            </p>
+          </div>
+
+          <div class="about-grid">
+            
+            <div class="about-card">
+              <div class="about-card-header">
+                <i data-lucide="target" class="text-cyan"></i>
+                <h4>Project Objectives</h4>
+              </div>
+              <ul class="about-bullet-list">
+                <li>Deploy a resilient dual-EC2 compute tier behind an AWS Application Load Balancer.</li>
+                <li>Implement automated instance metadata retrieval via secure IMDSv2 protocol.</li>
+                <li>Integrate real-time, zero-key meteorological telemetry through the Open-Meteo REST API.</li>
+                <li>Provide dynamic rule-based insights and interactive Chart.js visualization.</li>
+                <li>Deliver zero-config, one-click Windows startup for college lab evaluation.</li>
+              </ul>
+            </div>
+
+            <div class="about-card">
+              <div class="about-card-header">
+                <i data-lucide="layers" class="text-violet"></i>
+                <h4>Technology Stack</h4>
+              </div>
+              <div class="tech-stack-tags">
+                <span class="tech-tag">Python 3.11+</span>
+                <span class="tech-tag">Flask Microframework</span>
+                <span class="tech-tag">Vanilla CSS3 (Glassmorphism)</span>
+                <span class="tech-tag">HTML5 & ES6+ JavaScript</span>
+                <span class="tech-tag">Chart.js Visualizations</span>
+                <span class="tech-tag">Lucide Vector Icons</span>
+                <span class="tech-tag">AWS EC2 (Ubuntu 22.04)</span>
+                <span class="tech-tag">Application Load Balancer</span>
+                <span class="tech-tag">Auto Scaling Group</span>
+                <span class="tech-tag">AWS CloudWatch</span>
+                <span class="tech-tag">Amazon DynamoDB</span>
+                <span class="tech-tag">Nginx Reverse Proxy</span>
+                <span class="tech-tag">Gunicorn WSGI</span>
+              </div>
+            </div>
+
+            <div class="about-card">
+              <div class="about-card-header">
+                <i data-lucide="shield" class="text-indigo"></i>
+                <h4>High-Availability Architecture</h4>
+              </div>
+              <p class="about-card-text">
+                Incoming traffic hits the Internet-Facing Application Load Balancer across multiple Availability Zones.
+                The ALB continuously polls <code>/api/health</code> on port 80. If an EC2 instance fails or experiences high load, 
+                traffic is automatically isolated to healthy nodes while Auto Scaling spins up replacement capacity.
+              </p>
+            </div>
+
+            <div class="about-card">
+              <div class="about-card-header">
+                <i data-lucide="book-open" class="text-amber"></i>
+                <h4>College Documentation & Viva Preparation</h4>
+              </div>
+              <p class="about-card-text">
+                All academic reports, system diagrams, and 30+ viva defense questions are packaged in the 
+                <code>docs/</code> directory:
+              </p>
+              <div class="docs-quick-links">
+                <span class="doc-pill">docs/project-report.md</span>
+                <span class="doc-pill">docs/viva-questions.md</span>
+                <span class="doc-pill">aws/deployment-guide.md</span>
+              </div>
+            </div>
+
+          </div>
+
+        </section>
+
+      </div>
+    </main>
+
+  </div>
+
+  <!-- Custom JavaScript -->
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

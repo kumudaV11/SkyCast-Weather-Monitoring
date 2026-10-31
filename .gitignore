@@ -1,0 +1,10 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.env
+*.pem
+.aws/
+.DS_Store
+
+data/search_history.json
