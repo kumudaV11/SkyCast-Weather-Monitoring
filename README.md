@@ -189,5 +189,4 @@ python -m unittest discover tests/ -v
 
 ## 🎓 Academic Presentation Notes
 
-- **Viva Voce Defense Questions**: Refer to [docs/viva-questions.md](docs/viva-questions.md) for 32 detailed questions and answers across Cloud Computing, Operating Systems, Networking, and Full-Stack Engineering.
 - **Comprehensive Project Report**: Refer to [docs/project-report.md](docs/project-report.md) for the complete 20-section report including DFDs, sequence diagrams, and mathematical models.
