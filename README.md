@@ -190,3 +190,13 @@ python -m unittest discover tests/ -v
 ## 🎓 Academic Presentation Notes
 
 - **Comprehensive Project Report**: Refer to [docs/project-report.md](docs/project-report.md) for the complete 20-section report including DFDs, sequence diagrams, and mathematical models.
+
+- ## 👥 Team Members
+
+| Name | USN |
+|---|---|
+| Gagana P | 4NI25IS412 |
+| Kritika | 4NI24IS087 |
+| Kumuda V | 4NI24IS089 |
+| Mohammad Mujisim Fathima | 4NI24IS104 |
+| Parnika Palisetty | 4NI24IS112 |
